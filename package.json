@@ -1,0 +1,25 @@
+{
+  "name": "ipmaster",
+  "version": "1.0.0",
+  "description": "Manages ip address",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/jhfoo/ipmaster.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/jhfoo/ipmaster/issues"
+  },
+  "homepage": "https://github.com/jhfoo/ipmaster#readme",
+  "devDependencies": {
+    "restify": "^8.4.0",
+    "restify-route": "0.0.6",
+    "sqlite": "^3.0.3"
+  }
+}
