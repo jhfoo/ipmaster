@@ -9,71 +9,98 @@ function Sweeper(consul, addresses) {
     this.consul = consul
     this.addresses = addresses
     this.timer = null
-    this.SweepIntervalSec = 10
+    this.SweepIntervalSec = 5
     this.isReady = false
     this.ValidAddresses = {}
     this.UsedAddresses = {}
-    this.UnusedAddresses = []
+    this.UnusedAddresses = {}
+    this.AddressTimeoutSec = 8
 
     this.init()
 }
 
 Sweeper.prototype.init = function () {
-    this.UsedAddresses = this.ValidAddresses = expandAddressRange(this.addresses)
-
+    this.ValidAddresses = expandAddressRange(this.addresses)
+    this.UsedAddresses = JSON.parse(JSON.stringify(this.ValidAddresses))
+    Object.keys(this.addressess).forEach(domain => {
+        this.UnusedAddresses[domain] = []
+    });
 }
 
 Sweeper.prototype.sweep = async function () {
     console.log('Sweeping addressess...')
     await this.getConsulInfo()
+    console.log ('Sweep completed')
+    console.log('Used: %d', Object.keys(this.UsedAddresses).length)
+    console.log('Avail: %d', this.UnusedAddresses.length)
 
     this.timer = setTimeout(() => {
         this.sweep()
     }, this.SweepIntervalSec * 1000);
 }
 
-Sweeper.prototype.getConsulInfo = async function() {
+Sweeper.prototype.filterUsedAddresses = function (ConsulAddresses) {
+    // duplicate UsedAddresses for triage if not listed in Consul
+    let UsedAddressesCopy = Object.keys(this.UsedAddresses)
+    console.log(UsedAddressesCopy)
+
+    ConsulAddresses.forEach(node => {
+        // validate address
+        if (!(node.Address in this.ValidAddresses)) {
+            console.log('WARNING: %s is not registered as a valid address', node.Address)
+        } else {
+            // valid: check if address is already in the used pile
+            if (!(node.Address in this.UsedAddresses)) {
+                // not in used pile: remove from unused pile
+                UsedAddressesCopy.splice(UsedAddressesCopy.indexOf(node.Address), 1)
+            }
+
+            if (!this.UsedAddresses[node.Address] || this.UsedAddresses[node.Address].status != STATUS_UP) {
+                console.log('CHANGED: Status = UP for %s', node.Address)
+                this.UsedAddresses[node.Address] = {
+                    status: STATUS_UP
+                }
+                // remove from UnusedAddresses
+                let domain = this.ValidAddresses[node.address]
+                let idx = this.UnusedAddresses[domain].indexOf(node.Address)
+                if (idx > -1) {
+                    this.UnusedAddresses[domain].splice(idx, 1)
+                }
+            }
+
+            // remove from triage pile
+            UsedAddressesCopy.splice(UsedAddressesCopy.indexOf(node.Address), 1)
+        }
+    })
+
+    // triage addresses not listed in Consul
+    UsedAddressesCopy.forEach((address) => {
+        if (this.UsedAddresses[address].status === STATUS_UNKNOWN) {
+            // check if expired
+            if (dayjs().diff(this.UsedAddresses[address].DateTimeModified, 'second') > this.AddressTimeoutSec) {
+                console.log('EXPIRED: %s', address)
+                delete this.UsedAddresses[address]
+                this.UnusedAddresses.push(address)
+            }
+        } else {
+            // set to UNKNOWN state
+            console.log('CHANGED: Status = UNKNOWN for %s', address)
+            this.UsedAddresses[address].status = STATUS_UNKNOWN
+            this.UsedAddresses[address].DateTimeModified = dayjs()
+        }
+    })
+
+}
+
+Sweeper.prototype.getConsulInfo = async function () {
     return new Promise((resolve, reject) => {
         axios.get(this.consul.BaseUrl + '/v1/catalog/nodes')
             .then((resp) => {
                 // console.log(resp.data)
-                // duplicate UsedAddresses for triage if not listed in Consul
-                let UsedAddressesCopy = Object.keys(this.UsedAddresses)
                 // console.log(UsedAddressesCopy)
                 // process.exit(0)
 
-                resp.data.forEach(node => {
-                    // validate address
-                    if (!(node.Address in this.ValidAddresses)) {
-                        console.log('WARNING: %s is not registered as a valid address', node.Address)
-                    } else {
-                        // valid: check if address is already in the used pile
-                        if (!(node.Address in this.UsedAddresses)) {
-                            // not in used pile: remove from unused pile
-                            UnusedAddressesCopy.splice(UnusedAddressesCopy.indexOf(node.Address), 1)
-                        }
-
-                        if (!this.UsedAddresses[node.Address] || this.UsedAddresses[node.Address].status != STATUS_UP) {
-                            console.log('CHANGED: Status = UP for %s', node.Address)
-                            this.UsedAddresses[node.Address] = {
-                                status: STATUS_UP
-                            }
-                        }
-
-                        // remove from triage pile
-                        UsedAddressesCopy.splice(UsedAddressesCopy.indexOf(node.Address), 1)
-                    }
-                })
-
-                // triage addresses not listed in Consul
-                UsedAddressesCopy.forEach((address) => {
-                    if (this.UsedAddresses[address].status !== STATUS_UNKNOWN) {
-                        console.log('CHANGED: Status = UNKNOWN for %s', address)
-                        this.UsedAddresses[address].status = STATUS_UNKNOWN
-                        this.UsedAddresses[address].DateTimeModified = dayjs()
-                    }
-                })
-
+                this.filterUsedAddresses(resp.data)
                 this.isReady = true
                 resolve()
             })
@@ -86,8 +113,8 @@ Sweeper.prototype.getConsulInfo = async function() {
 function expandAddressRange(ranges) {
     let ret = {}
 
-    Object.keys(ranges).forEach(key => {
-        let range = ranges[key]
+    Object.keys(ranges).forEach(domain => {
+        let range = ranges[domain]
         let StartAddr = range.start.split('.')
         let EndAddr = range.end.split('.')
         let StartNum4 = parseInt(StartAddr.pop())
@@ -102,7 +129,8 @@ function expandAddressRange(ranges) {
                 let address = StartAddr.concat([Num3, i]).join('.')
                 // console.log(address)
                 ret[address] = {
-                    status: STATUS_INIT
+                    status: STATUS_INIT,
+                    domain: domain
                 }
             }
         }

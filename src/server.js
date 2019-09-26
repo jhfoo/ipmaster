@@ -35,6 +35,10 @@ async function main() {
     sweeper.sweep()
 }
 
+api.get('/address/get/:domain', (req, res, next) => {
+
+})
+
 api.get('/service/stop', (req, res, next) => {
     if (!isClosing) {
         isClosing = true
