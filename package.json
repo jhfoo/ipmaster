@@ -21,7 +21,7 @@
   },
   "homepage": "https://github.com/jhfoo/ipmaster#readme",
   "devDependencies": {
-    "axios": "^0.19.0",
+    "axios": "^0.21.1",
     "dayjs": "^1.8.16",
     "foobelt": "^0.1.8",
     "restify": "^8.4.0",
